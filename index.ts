@@ -1,2 +1,2 @@
-export { StateMachine } from './StateMachine';
+export { StateMachine, State, TStateMachine } from './StateMachine';
 export { default as FlightRecorder } from './FlightRecorder';

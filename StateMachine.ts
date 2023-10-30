@@ -1,4 +1,4 @@
-type State<TData> = {
+export type State<TData> = {
   name: string;
   transitions: PredicateTransition<TData>[];
   init: Function;
@@ -17,6 +17,8 @@ type PredicateTransition<TData> = {
   state: string, // could be State rather than string?
 }
 
+type Callback = (() => void) | ((TData) => void)
+
 export type TStateMachine<TData> = {
   // Builder functions for declaring state graph
   transitionTo: (stateName: string) => TStateMachine<TData>;
@@ -29,7 +31,7 @@ export type TStateMachine<TData> = {
   state: (stateName: string) => TStateMachine<TData>;
 
   // Event subscription
-  on: (stateName: string, fn: Function) => TStateMachine<TData>;
+  on: (stateName: string, fn: Callback) => TStateMachine<TData>;
 
   // Top-level controls
   currentState: () => string;
@@ -43,7 +45,7 @@ const toMinTicks = (val: number | (() => number)) => typeof val === 'number' ? v
 
 const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): State<TData> => {
   // event subscriptions
-  const subscriptions: ((TData) => void)[] = [];
+  const subscriptions: Callback[] = [];
 
   let minTicks = toMinTicks(getMinTicks);
   let tickCount = 0;
@@ -104,7 +106,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
   };
 
   // subscriptions
-  const onTicks = [];
+  const onTicks: Callback[] = [];
 
   // states used by the monad when building state graph
   let homeState = states[initialState];
