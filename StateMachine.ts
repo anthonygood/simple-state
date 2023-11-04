@@ -32,7 +32,7 @@ export type TStateMachine<TData> = {
   state: (stateName: string) => TStateMachine<TData>;
 
   // Event subscription
-  on: (stateName: string, fn: Callback) => TStateMachine<TData>;
+  on: (stateName: string, fn: Callback, everyTick?: boolean) => TStateMachine<TData>;
   onEvery: (stateName: string, fn: (TData, number) => void) => TStateMachine<TData>;
 
   // Top-level controls
@@ -192,7 +192,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       return machine;
     },
     currentState: () => currentStateName,
-    on: (stateName, fn) => {
+    on: (stateName, fn, everyTick = false) => {
       if (stateName === 'tick') {
         onTicks.push(fn);
         return machine;
@@ -204,17 +204,12 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
         throw new TypeError(`Cannot subscribe to state '${stateName}' because no state with that name exists.`)
       }
 
-      targetState.stateChangeSubscriptions.push(fn);
+      const subscriptions = everyTick ? targetState.stateTickSubscriptions : targetState.stateChangeSubscriptions;
+      subscriptions.push(fn);
       return machine;
     },
     onEvery: (stateName, fn) => {
-      const targetState = states[stateName];
-
-      if (!targetState) {
-        throw new TypeError(`Cannot subscribe to state '${stateName}' because no state with that name exists.`)
-      }
-
-      targetState.stateTickSubscriptions.push(fn);
+      machine.on(stateName, fn, true);
       return machine;
     },
     states,
