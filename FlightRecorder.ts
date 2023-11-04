@@ -41,6 +41,9 @@ const FlightRecorder = (...machines: TStateMachine<any>[]) => {
     });
 
     machine.on('tick', ({ delta }) => {
+      if (!delta) {
+        throw new Error(`Delta is required for FlightRecorder to work.`);
+      }
       const record = records[currentStateName];
       if (record) {
         record.time += delta;

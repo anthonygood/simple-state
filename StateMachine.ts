@@ -6,7 +6,8 @@ export type State<TData> = {
   exit: Function;
   minTicks: number | (() => number);
   tickCount: number;
-  subscriptions: Function[];
+  stateChangeSubscriptions: Function[];
+  stateTickSubscriptions: Function[];
 }
 
 type StateDict<TData> = { [Key: string]: State<TData> }
@@ -17,7 +18,7 @@ type PredicateTransition<TData> = {
   state: string, // could be State rather than string?
 }
 
-type Callback = (() => void) | ((TData) => void)
+type Callback = (() => void) | ((TData, number?) => void);
 
 export type TStateMachine<TData> = {
   // Builder functions for declaring state graph
@@ -32,6 +33,7 @@ export type TStateMachine<TData> = {
 
   // Event subscription
   on: (stateName: string, fn: Callback) => TStateMachine<TData>;
+  onEvery: (stateName: string, fn: (TData, number) => void) => TStateMachine<TData>;
 
   // Top-level controls
   currentState: () => string;
@@ -45,14 +47,16 @@ const toMinTicks = (val: number | (() => number)) => typeof val === 'number' ? v
 
 const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): State<TData> => {
   // event subscriptions
-  const subscriptions: Callback[] = [];
+  const stateChangeSubscriptions: Callback[] = [];
+  const stateTickSubscriptions: Callback[] = [];
 
   let minTicks = toMinTicks(getMinTicks);
   let tickCount = 0;
 
   const initialiser = (fn = (_data) => {}) => data => {
     fn(data);
-    subscriptions.forEach(subscription => subscription(data));
+    stateChangeSubscriptions.forEach(subscription => subscription(data));
+    stateTickSubscriptions.forEach(subscription => subscription(data, 0));
     minTicks = toMinTicks(getMinTicks);
     tickCount = 0;
   };
@@ -61,6 +65,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
 
   const ticker = (fn = (_data) => {}) => data => {
     tickCount++;
+    stateTickSubscriptions.forEach(subscription => subscription(data, tickCount));
     fn(data);
   };
 
@@ -69,7 +74,8 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
   return {
     name,
     transitions: [],
-    subscriptions,
+    stateChangeSubscriptions,
+    stateTickSubscriptions,
 
     get tickCount() {
       return tickCount;
@@ -198,7 +204,17 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
         throw new TypeError(`Cannot subscribe to state '${stateName}' because no state with that name exists.`)
       }
 
-      targetState.subscriptions.push(fn);
+      targetState.stateChangeSubscriptions.push(fn);
+      return machine;
+    },
+    onEvery: (stateName, fn) => {
+      const targetState = states[stateName];
+
+      if (!targetState) {
+        throw new TypeError(`Cannot subscribe to state '${stateName}' because no state with that name exists.`)
+      }
+
+      targetState.stateTickSubscriptions.push(fn);
       return machine;
     },
     states,

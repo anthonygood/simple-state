@@ -405,5 +405,25 @@ describe('StateMachine', () => {
       expect(onWalk).toHaveBeenCalledTimes(2);
       expect(onWalk2).toHaveBeenCalledTimes(2);
     });
+
+    it('can subscribe to every tick of a particular state', () => {
+      const onWalk = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .onEvery('walk', onWalk);
+
+      expect(onWalk).not.toHaveBeenCalled();
+
+      machine.process({});
+      expect(onWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onWalk).toHaveBeenCalledTimes(1);
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, 0);
+
+      machine.process({ walk: true });
+      expect(onWalk).toHaveBeenCalledTimes(2);
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, 1);
+    });
   });
 });
