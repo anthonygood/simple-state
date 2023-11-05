@@ -18,22 +18,22 @@ type PredicateTransition<TData> = {
   state: string, // could be State rather than string?
 }
 
-type Callback = (() => void) | ((TData, number?) => void);
+type Callback<TData> = (() => void) | ((TData: TData, i?: number) => void);
 
 export type TStateMachine<TData> = {
   // Builder functions for declaring state graph
   transitionTo: (stateName: string) => TStateMachine<TData>;
   when: (predicate: Predicate<TData>) => TStateMachine<TData>;
   or: (predicate: Predicate<TData>) => TStateMachine<TData>;
-  andThen: (init: Function) => TStateMachine<TData>;
-  tick: (tick: Function) => TStateMachine<TData>;
-  exit: (exit: Function) => TStateMachine<TData>;
+  andThen: (init: Callback<TData>) => TStateMachine<TData>;
+  tick: (tick: Callback<TData>) => TStateMachine<TData>;
+  exit: (exit: Callback<TData>) => TStateMachine<TData>;
   forAtLeast: (countOrFn: number | (() => number)) => TStateMachine<TData>;
   state: (stateName: string) => TStateMachine<TData>;
 
   // Event subscription
-  on: (stateName: string, fn: Callback, everyTick?: boolean) => TStateMachine<TData>;
-  onEvery: (stateName: string, fn: (TData, number) => void) => TStateMachine<TData>;
+  on: (stateName: string, fn: Callback<TData>, everyTick?: boolean) => TStateMachine<TData>;
+  onEvery: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
 
   // Top-level controls
   currentState: () => string;
@@ -47,13 +47,13 @@ const toMinTicks = (val: number | (() => number)) => typeof val === 'number' ? v
 
 const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): State<TData> => {
   // event subscriptions
-  const stateChangeSubscriptions: Callback[] = [];
-  const stateTickSubscriptions: Callback[] = [];
+  const stateChangeSubscriptions: Callback<TData>[] = [];
+  const stateTickSubscriptions: Callback<TData>[] = [];
 
   let minTicks = toMinTicks(getMinTicks);
   let tickCount = 0;
 
-  const initialiser = (fn = (_data) => {}) => data => {
+  const initialiser = (fn = (_data: TData) => {}) => (data: TData) => {
     fn(data);
     stateChangeSubscriptions.forEach(subscription => subscription(data));
     stateTickSubscriptions.forEach(subscription => subscription(data, 0));
@@ -63,7 +63,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
 
   let init = initialiser();
 
-  const ticker = (fn = (_data) => {}) => data => {
+  const ticker = (fn = (_data: TData) => {}) => (data: TData) => {
     tickCount++;
     stateTickSubscriptions.forEach(subscription => subscription(data, tickCount));
     fn(data);
@@ -112,7 +112,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
   };
 
   // subscriptions
-  const onTicks: Callback[] = [];
+  const onTicks: Callback<TData>[] = [];
 
   // states used by the monad when building state graph
   let homeState = states[initialState];
@@ -143,15 +143,15 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       homeState.transitions.push({ predicate, state: destState.name });
       return machine;
     },
-    andThen: (fn: Function) => {
+    andThen: (fn: Callback<TData>) => {
       destState.init = fn;
       return machine;
     },
-    tick: (fn: Function) => {
+    tick: (fn: Callback<TData>) => {
       destState.tick = fn;
       return machine;
     },
-    exit: (fn: Function) => {
+    exit: (fn: Callback<TData>) => {
       destState.exit = fn;
       return machine;
     },
@@ -178,7 +178,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       const transitions: PredicateTransition<TData>[] = states[currentStateName].transitions;
       const transition = transitions.find(transition => transition.predicate(data));
 
-      if (transition && tickCount >= minTicks) {
+      if (transition && tickCount >= toMinTicks(minTicks)) {
         currentState.exit(data);
 
         const nextState = states[transition.state];
