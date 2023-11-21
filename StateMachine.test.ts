@@ -425,5 +425,30 @@ describe('StateMachine', () => {
       expect(onWalk).toHaveBeenCalledTimes(2);
       expect(onWalk).toHaveBeenCalledWith({ walk: true }, 1);
     });
+
+    it('can subscribe to state end events', () => {
+      const onEndWalk = jest.fn();
+      const onEndIdle = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(data => !data.walk)
+        .onEnd('idle', onEndIdle)
+        .onEnd('walk', onEndWalk);
+
+      expect(onEndIdle).not.toHaveBeenCalled();
+      expect(onEndWalk).not.toHaveBeenCalled();
+
+      machine.process({});
+      expect(onEndIdle).not.toHaveBeenCalled();
+      expect(onEndWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onEndIdle).toHaveBeenCalledTimes(1);
+      expect(onEndWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: false });
+      expect(onEndIdle).toHaveBeenCalledTimes(1);
+      expect(onEndWalk).toHaveBeenCalledTimes(1);
+    });
   });
 });
