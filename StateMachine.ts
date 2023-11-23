@@ -109,7 +109,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
       return minTicks;
     },
 
-    exit() {
+    exit(data: TData) {
       stateEndSubscriptions.forEach(subscription => subscription(data));
     },
   }
