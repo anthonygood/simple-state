@@ -373,6 +373,31 @@ describe('StateMachine', () => {
       expect(onWalk).toHaveBeenCalled();
     });
 
+    it('can subscribe to specific state changes by passing metadata', () => {
+      const onWalkFromRun = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('run').when(data => data.run)
+        .state('run').transitionTo('walk').when(data => data.walk)
+        .transitionTo('idle').when(data => !data.walk && !data.run);
+
+      machine.on({ from: 'run', to: 'walk' }, onWalkFromRun);
+
+      expect(onWalkFromRun).not.toHaveBeenCalled();
+
+      machine.process({});
+      expect(onWalkFromRun).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onWalkFromRun).not.toHaveBeenCalled();
+
+      machine.process({ run: true });
+      expect(onWalkFromRun).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onWalkFromRun).toHaveBeenCalled();
+    });
+
     it('calls subscriber with data and metadata', () => {
       const onWalk = jest.fn();
       const machine = StateMachine<any>('idle')
@@ -392,11 +417,9 @@ describe('StateMachine', () => {
         .on('walk', onWalk)
         .on('walk', onWalk2);
 
-
       machine.process({});
       expect(onWalk).not.toHaveBeenCalled();
       expect(onWalk2).not.toHaveBeenCalled();
-
 
       machine.process({ walk: true });
       expect(onWalk).toHaveBeenCalledTimes(1);

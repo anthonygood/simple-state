@@ -12,6 +12,7 @@ export type State<TData> = {
   stateChangeSubscriptions: Callback<TData>[];
   stateTickSubscriptions: Callback<TData>[];
   stateEndSubscriptions: Callback<TData>[];
+  subscriptionsViaMatcher: [Partial<Metadata>, Callback<TData>][];
 }
 
 type StateDict<TData> = { [Key: string]: State<TData> }
@@ -34,7 +35,7 @@ export type TStateMachine<TData> = {
   state: (stateName: string) => TStateMachine<TData>;
 
   // Event subscription
-  on: (stateName: string, fn: Callback<TData>, modifier?: 'every' | 'end') => TStateMachine<TData>;
+  on: (stateName: string | Partial<Metadata>, fn: Callback<TData>, modifier?: 'every' | 'end') => TStateMachine<TData>;
   onEvery: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
   onEnd: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
 
@@ -54,8 +55,22 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
   const stateTickSubscriptions: Callback<TData>[] = [];
   const stateEndSubscriptions: Callback<TData>[] = [];
 
+  // These tuples represent subscriptions to a state via a transition matcher:
+  // [matcher, callback] where the matcher will be matched against the metadata of each transition
+  // to determine whether the callback should be called.
+  const subscriptionsViaMatcher: [Metadata, Callback<TData>][] = [];
+
   let minTicks = toMinTicks(getMinTicks);
   let tickCount = 0;
+
+  const callMatchingSubscriptions = (data, metadata) => ([matcher, callback]) => {
+    if (
+      (!matcher.from || matcher.from === metadata.from) &&
+      (!matcher.to || matcher.to === metadata.to)
+    ) {
+      callback(data, metadata);
+    }
+  };
 
   // TODO: treat all subscriptions as equal,
   // here calling init(fn) makes fn a special case kind of subscription
@@ -64,6 +79,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
     fn(data, metadata);
     stateChangeSubscriptions.forEach(subscription => subscription(data, metadata));
     stateTickSubscriptions.forEach(subscription => subscription(data, metadata));
+    subscriptionsViaMatcher.forEach(callMatchingSubscriptions(data, metadata));
     minTicks = toMinTicks(getMinTicks);
     tickCount = 0;
   };
@@ -73,6 +89,8 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
   const ticker = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata) => {
     tickCount++;
     stateTickSubscriptions.forEach(subscription => subscription(data, { ...metadata, tickCount }));
+    subscriptionsViaMatcher.forEach(callMatchingSubscriptions(data, { ...metadata, tickCount }));
+
     fn(data, { ...metadata, tickCount });
   };
 
@@ -84,6 +102,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
     stateChangeSubscriptions,
     stateTickSubscriptions,
     stateEndSubscriptions,
+    subscriptionsViaMatcher,
 
     get tickCount() {
       return tickCount;
@@ -202,25 +221,44 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       return machine;
     },
     currentState: () => currentStateName,
-    on: (stateName, fn, modifier: 'enter' | 'every' | 'end' = 'enter') => {
-      if (stateName === 'tick') {
+    on: (stateNameOrMatcher, fn, modifier: 'enter' | 'every' | 'end' = 'enter') => {
+      if (stateNameOrMatcher === 'tick') {
         onTicks.push(fn);
         return machine;
       }
 
-      const targetState = states[stateName];
+      if (typeof stateNameOrMatcher === 'string') {
+        const targetState = states[stateNameOrMatcher];
 
-      if (!targetState) {
-        throw new TypeError(`Cannot subscribe to state '${stateName}' because no state with that name exists.`)
+        if (!targetState) {
+          throw new TypeError(`Cannot subscribe to state '${stateNameOrMatcher}' because no state with that name exists.`)
+        }
+
+        const modifierToSubscriptionMap = {
+          enter: targetState.stateChangeSubscriptions,
+          every: targetState.stateTickSubscriptions,
+          end: targetState.stateEndSubscriptions,
+        };
+        const subscriptions = modifierToSubscriptionMap[modifier];
+        subscriptions.push(fn);
       }
 
-      const modifierToSubscriptionMap = {
-        enter: targetState.stateChangeSubscriptions,
-        every: targetState.stateTickSubscriptions,
-        end: targetState.stateEndSubscriptions,
-      };
-      const subscriptions = modifierToSubscriptionMap[modifier];
-      subscriptions.push(fn);
+      if (typeof stateNameOrMatcher === 'object') {
+        const { from, to } = stateNameOrMatcher;
+
+        if (!to) {
+          throw new TypeError(`Metadata object must contain a 'to' property if subscribing via transition matcher.`)
+        }
+
+        const targetState = states[to];
+
+        if (!targetState) {
+          throw new TypeError(`Cannot subscribe to state '${to}' because no state with that name exists.`)
+        }
+
+        targetState.subscriptionsViaMatcher.push([stateNameOrMatcher, fn]);
+      }
+
       return machine;
     },
     onEvery: (stateName, fn) => {
