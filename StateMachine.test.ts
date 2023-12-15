@@ -1,3 +1,5 @@
+import { describe, expect, jest, it } from '@jest/globals';
+
 import { StateMachine } from './StateMachine';
 
 describe('StateMachine', () => {
@@ -371,6 +373,16 @@ describe('StateMachine', () => {
       expect(onWalk).toHaveBeenCalled();
     });
 
+    it('calls subscriber with data and metadata', () => {
+      const onWalk = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .on('walk', onWalk);
+
+      machine.process({ walk: true, foo: 'bar' });
+      expect(onWalk).toHaveBeenCalledWith({ walk: true, foo: 'bar' }, { from: 'idle', to: 'walk', tickCount: 0 });
+    });
+
     it('correctly calls subscribers for multiple state changes', () => {
       const onWalk = jest.fn();
       const onWalk2 = jest.fn();
@@ -419,11 +431,11 @@ describe('StateMachine', () => {
 
       machine.process({ walk: true });
       expect(onWalk).toHaveBeenCalledTimes(1);
-      expect(onWalk).toHaveBeenCalledWith({ walk: true }, 0);
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'idle', to: 'walk', tickCount: 0 });
 
       machine.process({ walk: true });
       expect(onWalk).toHaveBeenCalledTimes(2);
-      expect(onWalk).toHaveBeenCalledWith({ walk: true }, 1);
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'walk', to: 'walk', tickCount: 1 });
     });
 
     it('can subscribe to state end events', () => {

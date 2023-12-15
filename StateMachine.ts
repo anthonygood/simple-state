@@ -1,11 +1,12 @@
-type Callback<TData> = (() => void) | ((TData: TData, i?: number) => void);
+type Metadata = { from: string | null, to: string, tickCount: number };
+type Callback<TData> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata) => void);
 
 export type State<TData> = {
   name: string;
   transitions: PredicateTransition<TData>[];
-  init: Function;
-  tick: Function;
-  exit: Function;
+  init: Callback<TData>;
+  tick: Callback<TData>;
+  exit: Callback<TData>;
   minTicks: number | (() => number);
   tickCount: number;
   stateChangeSubscriptions: Callback<TData>[];
@@ -40,7 +41,7 @@ export type TStateMachine<TData> = {
   // Top-level controls
   currentState: () => string;
   process: (data: TData) => TStateMachine<TData>;
-  init: () => TStateMachine<TData>;
+  init: (data: TData) => TStateMachine<TData>;
 
   states: StateDict<TData>;
 };
@@ -59,20 +60,20 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
   // TODO: treat all subscriptions as equal,
   // here calling init(fn) makes fn a special case kind of subscription
   // possibly useful for order/priority of execution, but probably unnecessary complexity
-  const initialiser = (fn = (_data: TData) => {}) => (data: TData) => {
-    fn(data);
-    stateChangeSubscriptions.forEach(subscription => subscription(data));
-    stateTickSubscriptions.forEach(subscription => subscription(data, 0));
+  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata) => {
+    fn(data, metadata);
+    stateChangeSubscriptions.forEach(subscription => subscription(data, metadata));
+    stateTickSubscriptions.forEach(subscription => subscription(data, metadata));
     minTicks = toMinTicks(getMinTicks);
     tickCount = 0;
   };
 
   let init = initialiser();
 
-  const ticker = (fn = (_data: TData) => {}) => (data: TData) => {
+  const ticker = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata) => {
     tickCount++;
-    stateTickSubscriptions.forEach(subscription => subscription(data, tickCount));
-    fn(data);
+    stateTickSubscriptions.forEach(subscription => subscription(data, { ...metadata, tickCount }));
+    fn(data, { ...metadata, tickCount });
   };
 
   let tick = ticker();
@@ -109,8 +110,8 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
       return minTicks;
     },
 
-    exit(data: TData) {
-      stateEndSubscriptions.forEach(subscription => subscription(data));
+    exit(data: TData, metadata: Metadata) {
+      stateEndSubscriptions.forEach(subscription => subscription(data, metadata));
     },
   }
 };
@@ -176,9 +177,9 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       homeState = destState = nominatedState;
       return machine;
     },
-    init: () => {
+    init: (data: TData) => {
       const { init } = states[initialState];
-      init();
+      init(data, { from: null, to: initialState, tickCount: 0 });
       return machine;
     },
     process: data => {
@@ -188,15 +189,15 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       const transition = transitions.find(transition => transition.predicate(data));
 
       if (transition && tickCount >= toMinTicks(minTicks)) {
-        currentState.exit(data);
+        currentState.exit(data, { from: currentStateName, to: transition.state, tickCount });
 
         const nextState = states[transition.state];
-        nextState.init && nextState.init(data);
+        nextState.init && nextState.init(data, { from: currentStateName, to: nextState.name, tickCount: 0 });
 
         currentStateName = nextState.name;
       } else {
-        currentState.tick(data);
-        onTicks.forEach(fn => fn(data));
+        currentState.tick(data, { from: currentStateName, to: currentStateName, tickCount });
+        onTicks.forEach(fn => fn(data, { from: currentStateName, to: currentStateName, tickCount }));
       }
       return machine;
     },
