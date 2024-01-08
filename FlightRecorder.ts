@@ -48,6 +48,7 @@ const FlightRecorder = (...machines: TStateMachine<any>[]) => {
       if (record) {
         record.time += delta;
         currentDuration += delta;
+        record.current = currentDuration;
 
         if ((record.longest || 0) < currentDuration) {
           record.longest = currentDuration;

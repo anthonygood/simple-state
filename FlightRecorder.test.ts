@@ -57,6 +57,12 @@ describe('FlightRecorder', () => {
     expect(recorder.jumping.longest).toBe(10);
   });
 
+  it('records current times', () => {
+    expect(recorder.idle.current).toBe(10);
+    expect(recorder.walking.current).toBe(40);
+    expect(recorder.jumping.current).toBe(10);
+  });
+
   it('can record multiple state machines', () => {
     const a = getStateMachine();
     const b = StateMachine<any>('right')
