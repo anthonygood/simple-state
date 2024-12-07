@@ -1,5 +1,17 @@
-type Metadata = { from: string | null, to: string, tickCount: number };
-type Callback<TData> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata) => void);
+type Metadata<TData> = {
+  from: string | null,
+  to: string,
+  tickCount: number,
+  shouldUnsubscribe?: (
+    dataWithMeta: {
+      data: TData,
+      /** @description The number of times the given state has been entered */
+      timesEnteredCount: number,
+      /** @description The number of ticks of the current state */
+      tickCount: number
+    }
+  ) => boolean };
+type Callback<TData> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata<TData>) => void);
 
 export type State<TData> = {
   name: string;
@@ -12,7 +24,7 @@ export type State<TData> = {
   stateChangeSubscriptions: Callback<TData>[];
   stateTickSubscriptions: Callback<TData>[];
   stateEndSubscriptions: Callback<TData>[];
-  subscriptionsViaMatcher: [Partial<Metadata>, Callback<TData>][];
+  subscriptionsViaMatcher: [Partial<Metadata<TData>>, Callback<TData>][];
 }
 
 type StateDict<TData> = { [Key: string]: State<TData> }
@@ -35,7 +47,9 @@ export type TStateMachine<TData> = {
   state: (stateName: string) => TStateMachine<TData>;
 
   // Event subscription
-  on: (stateName: string | Partial<Metadata>, fn: Callback<TData>, modifier?: 'every' | 'end') => TStateMachine<TData>;
+  on: (stateName: string | Partial<Metadata<TData>>, fn: Callback<TData>, modifier?: 'begin' | 'every' | 'end') => TStateMachine<TData>;
+  once: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
+  off: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
   onEvery: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
   onEnd: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
 
@@ -58,35 +72,57 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
   // These tuples represent subscriptions to a state via a transition matcher:
   // [matcher, callback] where the matcher will be matched against the metadata of each transition
   // to determine whether the callback should be called.
-  const subscriptionsViaMatcher: [Metadata, Callback<TData>][] = [];
+  let subscriptionsViaMatcher: [Metadata<TData>, Callback<TData>][] = [];
 
   let minTicks = toMinTicks(getMinTicks);
   let tickCount = 0;
+  let timesEnteredCount = 0;
 
-  const callMatchingSubscriptions = (data, metadata) => ([matcher, callback]) => {
-    if (
-      (!matcher.from || matcher.from === metadata.from) &&
+  const callMatchingSubscriptions = (data: TData, metadata: Metadata<TData>) =>
+    /** @description
+     * Returns the boolean value of shouldUnsubscribe if present or false
+     * This is used to determine whether the subscription should be removed after being called.
+     */
+    ([matcher, callback]: [Metadata<TData>, Callback<TData>]): void => {
+      if (
+        (!matcher.from || matcher.from === metadata.from) &&
+        (!matcher.to || matcher.to === metadata.to)
+      ) {
+        callback(data, metadata);
+        // if (metadata.shouldUnsubscribe) return metadata.shouldUnsubscribe({ data, timesEnteredCount, tickCount });
+      }
+      // return false;
+    };
+
+  const filterByMatcher = (metadata: Partial<Metadata<TData>>) => {
+    return ([matcher]: [Metadata<TData>, Callback<TData>]) => {
+      return (!matcher.from || matcher.from === metadata.from) &&
       (!matcher.to || matcher.to === metadata.to)
-    ) {
-      callback(data, metadata);
     }
   };
 
   // TODO: treat all subscriptions as equal,
   // here calling init(fn) makes fn a special case kind of subscription
   // possibly useful for order/priority of execution, but probably unnecessary complexity
-  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata) => {
+  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata<TData>) => {
+    timesEnteredCount++;
+    minTicks = toMinTicks(getMinTicks);
+    tickCount = 0;
     fn(data, metadata);
     stateChangeSubscriptions.forEach(subscription => subscription(data, metadata));
     stateTickSubscriptions.forEach(subscription => subscription(data, metadata));
-    subscriptionsViaMatcher.forEach(callMatchingSubscriptions(data, metadata));
-    minTicks = toMinTicks(getMinTicks);
-    tickCount = 0;
+
+    const matchedSubscriptions = subscriptionsViaMatcher.filter(filterByMatcher(metadata));
+    matchedSubscriptions.forEach(([, callback]) => callback(data, metadata));
+
+    // remove subscriptions that should be unsubscribed
+    const shouldUnsubscribe = matchedSubscriptions.filter(([matcher]) => matcher.shouldUnsubscribe?.({ data, timesEnteredCount, tickCount }));
+    subscriptionsViaMatcher = subscriptionsViaMatcher.filter(sub => !shouldUnsubscribe.includes(sub));
   };
 
   let init = initialiser();
 
-  const ticker = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata) => {
+  const ticker = (fn: Callback<TData> = () => {}) => (data: TData, metadata: Metadata<TData>) => {
     tickCount++;
     stateTickSubscriptions.forEach(subscription => subscription(data, { ...metadata, tickCount }));
     subscriptionsViaMatcher.forEach(callMatchingSubscriptions(data, { ...metadata, tickCount }));
@@ -129,7 +165,7 @@ const State = <TData>(name: string, getMinTicks: number | (() => number) = 0): S
       return minTicks;
     },
 
-    exit(data: TData, metadata: Metadata) {
+    exit(data: TData, metadata: Metadata<TData>) {
       stateEndSubscriptions.forEach(subscription => subscription(data, metadata));
     },
   }
@@ -207,6 +243,8 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       const transitions: PredicateTransition<TData>[] = states[currentStateName].transitions;
       const transition = transitions.find(transition => transition.predicate(data));
 
+      console.log('process!', { transition, data });
+
       if (transition && tickCount >= toMinTicks(minTicks)) {
         currentState.exit(data, { from: currentStateName, to: transition.state, tickCount });
 
@@ -221,7 +259,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       return machine;
     },
     currentState: () => currentStateName,
-    on: (stateNameOrMatcher, fn, modifier: 'enter' | 'every' | 'end' = 'enter') => {
+    on: (stateNameOrMatcher, fn, modifier: 'begin' | 'every' | 'end' = 'begin') => {
       if (stateNameOrMatcher === 'tick') {
         onTicks.push(fn);
         return machine;
@@ -235,7 +273,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
         }
 
         const modifierToSubscriptionMap = {
-          enter: targetState.stateChangeSubscriptions,
+          begin: targetState.stateChangeSubscriptions,
           every: targetState.stateTickSubscriptions,
           end: targetState.stateEndSubscriptions,
         };
@@ -261,13 +299,15 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
 
       return machine;
     },
+    once: (stateName, fn) => {
+      console.log('once!', stateName, fn);
+      return machine.on({ to: stateName, shouldUnsubscribe: () => true }, fn);
+    },
     onEvery: (stateName, fn) => {
-      machine.on(stateName, fn, 'every');
-      return machine;
+      return machine.on(stateName, fn, 'every');
     },
     onEnd: (stateName, fn) => {
-      machine.on(stateName, fn, 'end');
-      return machine;
+      return machine.on(stateName, fn, 'end');
     },
     states,
   };
