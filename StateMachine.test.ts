@@ -150,7 +150,7 @@ describe('StateMachine', () => {
         .state('walk').andThen(walkInit).tick(walkTick)
         .transitionTo('idle').when(data => !data.walk)
         .state('never').andThen(neverCall)
-        .init();
+        .init({});
 
       expect(machine.currentState()).toBe('idle');
 
@@ -195,7 +195,7 @@ describe('StateMachine', () => {
           // Expect walkTick to be called for 4 ticks
           .andThen(walkInit).tick(walkTick).forAtLeast(4)
           .state('walk').transitionTo('idle').when(data => !data.walk)
-          .init();
+          .init({});
 
         expect(idleInit).toHaveBeenCalledTimes(1);
         expect(machine.currentState()).toBe('idle');
@@ -292,7 +292,7 @@ describe('StateMachine', () => {
           // Should call walkTick twice
           .andThen(walkInit).tick(walkTick).forAtLeast(forAtLeastFn)
           .state('walk').transitionTo('idle').when(data => !data.walk)
-          .init();
+          .init({});
 
         expect(idleInit).toHaveBeenCalledTimes(1);
         expect(idleTick).toHaveBeenCalledTimes(0);
@@ -484,6 +484,59 @@ describe('StateMachine', () => {
       machine.process({ walk: false });
       expect(onEndIdle).toHaveBeenCalledTimes(1);
       expect(onEndWalk).toHaveBeenCalledTimes(1);
+    });
+
+    it('can subscribe to a single state change once', () => {
+      const onWalk = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+
+      machine.once('walk', onWalk);
+      expect(onWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: false });
+      expect(onWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onWalk).toHaveBeenCalledTimes(1);
+
+      machine.process({ walk: true });
+      expect(onWalk).toHaveBeenCalledTimes(1);
+    });
+
+    it('can manually unsubscribe too', () => {
+      const onWalk = jest.fn();
+      const onIdle = jest.fn();
+
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(data => !data.walk)
+        .on('walk', onWalk)
+        .on('idle', onIdle)
+        .init({});
+
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onWalk).not.toHaveBeenCalled();
+      expect(machine.currentState()).toBe('idle');
+
+      machine.process({});
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onWalk).not.toHaveBeenCalled();
+
+      machine.process({ walk: true });
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onWalk).toHaveBeenCalledTimes(1);
+
+      machine.off('walk', onWalk);
+
+      machine.process({ walk: true });
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onWalk).toHaveBeenCalledTimes(1);
+
+      machine.process({});
+      expect(onIdle).toHaveBeenCalledTimes(2);
+      expect(onWalk).toHaveBeenCalledTimes(1);
+
     });
   });
 });
