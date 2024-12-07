@@ -527,16 +527,19 @@ describe('StateMachine', () => {
       expect(onIdle).toHaveBeenCalledTimes(1);
       expect(onWalk).toHaveBeenCalledTimes(1);
 
+      machine.process({ walk: true });
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onWalk).toHaveBeenCalledTimes(2);
+
       machine.off('walk', onWalk);
 
       machine.process({ walk: true });
       expect(onIdle).toHaveBeenCalledTimes(1);
-      expect(onWalk).toHaveBeenCalledTimes(1);
+      expect(onWalk).toHaveBeenCalledTimes(2);
 
       machine.process({});
       expect(onIdle).toHaveBeenCalledTimes(2);
-      expect(onWalk).toHaveBeenCalledTimes(1);
-
+      expect(onWalk).toHaveBeenCalledTimes(2);
     });
   });
 });
