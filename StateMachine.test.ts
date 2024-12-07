@@ -99,7 +99,7 @@ describe('StateMachine', () => {
 
       expect(init1).not.toHaveBeenCalled()
 
-      machine.init();
+      machine.init({});
       expect(init1).toHaveBeenCalled()
 
       expect(init2).not.toHaveBeenCalled();
@@ -511,8 +511,8 @@ describe('StateMachine', () => {
       const machine = StateMachine<any>('idle')
         .transitionTo('walk').when(data => data.walk)
         .state('walk').transitionTo('idle').when(data => !data.walk)
-        .on('walk', onWalk)
-        .on('idle', onIdle)
+        .onEvery('walk', onWalk)
+        .onEvery('idle', onIdle)
         .init({});
 
       expect(onIdle).toHaveBeenCalledTimes(1);
@@ -520,25 +520,25 @@ describe('StateMachine', () => {
       expect(machine.currentState()).toBe('idle');
 
       machine.process({});
-      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onIdle).toHaveBeenCalledTimes(2);
       expect(onWalk).not.toHaveBeenCalled();
 
       machine.process({ walk: true });
-      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onIdle).toHaveBeenCalledTimes(2);
       expect(onWalk).toHaveBeenCalledTimes(1);
 
       machine.process({ walk: true });
-      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onIdle).toHaveBeenCalledTimes(2);
       expect(onWalk).toHaveBeenCalledTimes(2);
 
       machine.off('walk', onWalk);
 
       machine.process({ walk: true });
-      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onIdle).toHaveBeenCalledTimes(2);
       expect(onWalk).toHaveBeenCalledTimes(2);
 
       machine.process({});
-      expect(onIdle).toHaveBeenCalledTimes(2);
+      expect(onIdle).toHaveBeenCalledTimes(3);
       expect(onWalk).toHaveBeenCalledTimes(2);
     });
   });
