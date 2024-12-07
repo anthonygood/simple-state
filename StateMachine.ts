@@ -243,8 +243,6 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       const transitions: PredicateTransition<TData>[] = states[currentStateName].transitions;
       const transition = transitions.find(transition => transition.predicate(data));
 
-      console.log('process!', { transition, data });
-
       if (transition && tickCount >= toMinTicks(minTicks)) {
         currentState.exit(data, { from: currentStateName, to: transition.state, tickCount });
 
@@ -299,8 +297,28 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
 
       return machine;
     },
+    off(stateName, fn) {
+      const targetState = states[stateName];
+
+      if (!targetState) {
+        throw new TypeError(`Cannot unsubscribe from state '${stateName}' because no state with that name exists.`)
+      }
+
+      const allSubs = [
+        targetState.stateChangeSubscriptions,
+        targetState.stateTickSubscriptions,
+        targetState.stateEndSubscriptions,
+      ];
+
+      const subs = allSubs.find(sub => sub.includes(fn));
+      if (!subs) return machine;
+
+      const index = subs.indexOf(fn);
+      if (index > -1) subs.splice(index, 1);
+
+      return machine;
+    },
     once: (stateName, fn) => {
-      console.log('once!', stateName, fn);
       return machine.on({ to: stateName, shouldUnsubscribe: () => true }, fn);
     },
     onEvery: (stateName, fn) => {
