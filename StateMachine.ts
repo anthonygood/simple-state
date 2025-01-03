@@ -246,10 +246,11 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       if (transition && tickCount >= toMinTicks(minTicks)) {
         currentState.exit(data, { from: currentStateName, to: transition.state, tickCount });
 
+        const prevState = currentState;
         const nextState = states[transition.state];
-        nextState.init && nextState.init(data, { from: currentStateName, to: nextState.name, tickCount: 0 });
-
         currentStateName = nextState.name;
+
+        nextState.init && nextState.init(data, { from: prevState.name, to: nextState.name, tickCount: 0 });
       } else {
         currentState.tick(data, { from: currentStateName, to: currentStateName, tickCount });
         onTicks.forEach(fn => fn(data, { from: currentStateName, to: currentStateName, tickCount }));

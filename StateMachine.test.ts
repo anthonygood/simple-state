@@ -461,6 +461,22 @@ describe('StateMachine', () => {
       expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'walk', to: 'walk', tickCount: 1 });
     });
 
+    it('has correct currentState when callback is invoked', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk);
+
+      let currentState = machine.currentState();
+
+      expect(currentState).toBe('idle');
+
+      const onWalk = jest.fn(() => {
+        expect(machine.currentState()).toBe('walk');
+      });
+
+      machine.on('walk', onWalk).process({ walk: true });
+      expect(onWalk).toHaveBeenCalledTimes(1);
+    });
+
     it('can subscribe to state end events', () => {
       const onEndWalk = jest.fn();
       const onEndIdle = jest.fn();
