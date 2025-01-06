@@ -34,7 +34,7 @@ describe('FlightRecorder', () => {
   const machine = getStateMachine();
   const recorder = FlightRecorder(machine);
 
-  machine.init();
+  machine.init({});
   ticks.forEach(key => {
     machine.process({ [key]: true, delta: 10 })
   });
@@ -90,8 +90,8 @@ describe('FlightRecorder', () => {
       ];
 
       const recorder = FlightRecorder(a, b);
-      a.init();
-      b.init();
+      a.init({});
+      b.init({});
 
       ticks.forEach(key => {
         a.process({ [key]: true, delta: 11 });
