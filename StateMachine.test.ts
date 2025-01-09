@@ -184,7 +184,7 @@ describe('StateMachine', () => {
     });
 
     describe('forAtLeast', () => {
-      it('forAtLeast can declare minTicks for transition state', () => {
+      it('can declare minTicks for transition state', () => {
         const idleInit = jest.fn();
         const walkInit = jest.fn();
         const walkTick = jest.fn();
@@ -276,7 +276,71 @@ describe('StateMachine', () => {
         expect(walkTick).toHaveBeenCalledTimes(4);
       });
 
-      it('forAtLeast accepts function to define minTicks for transition state', () => {
+      it('can declare minDuration for transition state by calling forAtLeast(n, "duration")', () => {
+        const idleInit = jest.fn();
+        const walkInit = jest.fn();
+        const walkTick = jest.fn();
+
+        // No idle tick callback, so should no-op for two duration
+        const machine = StateMachine<any>('idle').andThen(idleInit).forAtLeast(15, 'duration')
+          .transitionTo('walk').when(data => data.walk).or(data => data.run)
+          // Expect walkTick to be called for minimum 40 duration
+          .andThen(walkInit).tick(walkTick).forAtLeast(40, 'duration')
+          .state('walk').transitionTo('idle').when(data => !data.walk)
+          .init({ dt: 0 });
+
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(machine.currentState()).toBe('idle');
+
+        // First tick, cumulative duration is 1
+        machine.process({ walk: true, dt: 1 });
+        expect(machine.currentState()).toBe('idle');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(0);
+
+        // Second tick, cumulative duration is 5
+        machine.process({ walk: true, dt: 4 });
+        expect(machine.currentState()).toBe('idle');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(0);
+
+        // Third tick, cumulative duration of new state is 15
+        machine.process({ walk: true, dt: 10 });
+        expect(machine.currentState()).toBe('walk');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(1);
+        expect(walkTick).toHaveBeenCalledTimes(0);
+
+        // Fourth tick, new cumulative duration is 10
+        machine.process({ walk: false, dt: 10 });
+        expect(machine.currentState()).toBe('walk');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(1);
+        expect(walkTick).toHaveBeenCalledTimes(1);
+
+        // Fifth tick, cumulative duration is 15
+        machine.process({ walk: false, dt: 5 });
+        expect(machine.currentState()).toBe('walk');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(1);
+        expect(walkTick).toHaveBeenCalledTimes(2);
+
+        // Sixth tick, cumulative duration is 21
+        machine.process({ walk: false, dt: 6 });
+        expect(machine.currentState()).toBe('walk');
+        expect(idleInit).toHaveBeenCalledTimes(1);
+        expect(walkInit).toHaveBeenCalledTimes(1);
+        expect(walkTick).toHaveBeenCalledTimes(3);
+
+        // Seventh tick, cumulative duration is 42
+        machine.process({ walk: false, dt: 21 });
+        expect(machine.currentState()).toBe('idle');
+        expect(idleInit).toHaveBeenCalledTimes(2);
+        expect(walkInit).toHaveBeenCalledTimes(1);
+        expect(walkTick).toHaveBeenCalledTimes(3);
+      });
+
+      it('accepts function to define minTicks for transition state', () => {
         const idleInit = jest.fn();
         const idleTick = jest.fn();
         const walkInit = jest.fn();
@@ -353,7 +417,7 @@ describe('StateMachine', () => {
 
         expect(walkInit).toHaveBeenCalledTimes(2);
         expect(walkTick).toHaveBeenCalledTimes(2);
-      })
+      });
     });
   });
 
@@ -565,7 +629,6 @@ describe('StateMachine', () => {
         .transitionTo('walk').when(data => data.walk)
         .state('walk').transitionTo('idle').when(
           (data, meta) => {
-            console.log('predicate called with', data, meta);
             return !data.walk && !!meta.duration && (meta.duration > 1)
           }
         );
