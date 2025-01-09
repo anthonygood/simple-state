@@ -591,7 +591,7 @@ describe('StateMachine', () => {
   it('passes accumulated delta time as duration to event callbacks', () => {
     const machine = StateMachine<any>('idle')
       .transitionTo('walk').when(data => data.walk)
-      .state('walk').transitionTo('idle').when((data, { duration }) => !data.walk && duration > 10)
+      .state('walk').transitionTo('idle').when((data, { duration = 0 }) => !data.walk && duration > 10)
       .timers()
       .init({});
 
