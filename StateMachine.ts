@@ -114,7 +114,6 @@ const State = <TData>(
   // possibly useful for order/priority of execution, but probably unnecessary complexity
   const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, initData: { from: string | null; recordDuration: boolean }) => {
     if (initData.recordDuration) duration = 0;
-    console.log('init', { initData, to: name, duration });
 
     timesEnteredCount++;
     minTicks = toMinTicks(getMinTicks);
