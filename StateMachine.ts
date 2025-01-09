@@ -222,23 +222,17 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
 
   const machine: TStateMachine<TData> = {
     transitionTo: stateName => {
-      if (stateName === homeState.name) {
-        throw new Error(`Cannot transition to same state: '${stateName}'`);
-      }
+      preventTransitionToSameState(stateName, homeState.name);
       destState = states[stateName] = states[stateName] || State(stateName);
       return machine;
     },
     when: predicate => {
-      if (homeState.name === destState.name) {
-        throw new Error(`Cannot transition to same state: '${destState.name}'`);
-      }
+      preventTransitionToSameState(homeState.name, destState.name);
       homeState.transitions.push({ predicate, state: destState.name });
       return machine;
     },
     or: predicate => {
-      if (homeState.name === destState.name) {
-        throw new Error(`Cannot transition to same state: '${destState.name}'`)
-      }
+      preventTransitionToSameState(homeState.name, destState.name);
       homeState.transitions.push({ predicate, state: destState.name });
       return machine;
     },
