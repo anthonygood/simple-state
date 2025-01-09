@@ -405,7 +405,7 @@ describe('StateMachine', () => {
         .on('walk', onWalk);
 
       machine.process({ walk: true, foo: 'bar' });
-      expect(onWalk).toHaveBeenCalledWith({ walk: true, foo: 'bar' }, { from: 'idle', to: 'walk', tickCount: 0 });
+      expect(onWalk).toHaveBeenCalledWith({ walk: true, foo: 'bar' }, { from: 'idle', to: 'walk', tickCount: 0, duration: null });
     });
 
     it('correctly calls subscribers for multiple state changes', () => {
@@ -454,11 +454,11 @@ describe('StateMachine', () => {
 
       machine.process({ walk: true });
       expect(onWalk).toHaveBeenCalledTimes(1);
-      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'idle', to: 'walk', tickCount: 0 });
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'idle', to: 'walk', tickCount: 0, duration: null });
 
       machine.process({ walk: true });
       expect(onWalk).toHaveBeenCalledTimes(2);
-      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'walk', to: 'walk', tickCount: 1 });
+      expect(onWalk).toHaveBeenCalledWith({ walk: true }, { from: 'walk', to: 'walk', tickCount: 1, duration: null });
     });
 
     it('has correct currentState when callback is invoked', () => {
@@ -557,5 +557,56 @@ describe('StateMachine', () => {
       expect(onIdle).toHaveBeenCalledTimes(3);
       expect(onWalk).toHaveBeenCalledTimes(2);
     });
+  });
+
+  describe('timers()', () => {
+    const getMachine = () =>
+      StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(
+          (data, meta) => {
+            console.log('predicate called with', data, meta);
+            return !data.walk && !!meta.duration && (meta.duration > 1)
+          }
+        );
+
+    it('passes accumulated delta time as duration to predicate', () => {
+      const machine = getMachine().timers();
+      expect(machine.currentState()).toBe('idle');
+
+      machine.process({ walk: true, dt: 0.51 });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.process({ walk: false, dt: 0.23 });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.process({ walk: false, dt: 0.45 });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.process({ walk: false, dt: 0.52 });
+      expect(machine.currentState()).toBe('idle');
+    });
+  });
+
+  it('passes accumulated delta time as duration to event callbacks', () => {
+    const machine = StateMachine<any>('idle')
+      .transitionTo('walk').when(data => data.walk)
+      .state('walk').transitionTo('idle').when((data, { duration }) => !data.walk && duration > 10)
+      .timers()
+      .init({});
+
+    let duration: number | null = 0;
+    machine.onEvery('walk', (_, { duration: d }) => {
+      duration = d;
+    });
+
+    machine.process({ walk: true, dt: 0.25 });
+    expect(duration).toBe(0);
+
+    machine.process({ walk: true, dt: 0.4 });
+    expect(duration).toBe(0.4);
+
+    machine.process({ walk: true, dt: 0.75 });
+    expect(duration).toBe(1.15);
   });
 });
