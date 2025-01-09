@@ -14,7 +14,7 @@ type Metadata<TData> = {
     }
   ) => boolean };
 
-type InitData = { from: null | string; recordDuration: boolean };
+type InitData = { from: string | null; recordDuration: boolean };
 type Callback<TData> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata<TData>) => void);
 type InitCallback<TData> = (data: TData, metadata: InitData) => void;
 type TickCallback<TData> = (data: TData, metadata: { delta?: number }) => void;
@@ -23,8 +23,11 @@ export type State<TData> = {
   name: string;
   transitions: PredicateTransition<TData>[];
   init: InitCallback<TData>;
+  setInit: (fn: Callback<TData>) => void;
   tick: TickCallback<TData>;
+  setTick: (fn: Callback<TData>) => void;
   exit: Callback<TData>; // TODO make consistent with above
+  setExit: (fn: Callback<TData>) => void;
   minTicks: number | (() => number);
   tickCount: number;
   duration: number | null;
@@ -109,7 +112,7 @@ const State = <TData>(
   // TODO: treat all subscriptions as equal,
   // here calling init(fn) makes fn a special case kind of subscription
   // possibly useful for order/priority of execution, but probably unnecessary complexity
-  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, initData: { from: string; recordDuration: boolean }) => {
+  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, initData: { from: string | null; recordDuration: boolean }) => {
     if (initData.recordDuration) duration = 0;
     console.log('init', { initData, to: name, duration });
 
@@ -173,14 +176,14 @@ const State = <TData>(
       return duration;
     },
 
-    set init(fn) {
+    setInit(fn) {
       init = initialiser(fn);
     },
     get init() {
       return init;
     },
 
-    set tick(fn) {
+    setTick(fn) {
       tick = ticker(fn);
     },
     get tick() {
@@ -194,6 +197,9 @@ const State = <TData>(
       return minTicks;
     },
 
+    setExit(fn) {
+      stateEndSubscriptions.push(fn);
+    },
     exit(data: TData, metadata: Metadata<TData>) {
       stateEndSubscriptions.forEach(subscription => subscription(data, metadata));
     },
@@ -237,15 +243,15 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       return machine;
     },
     andThen: (fn: Callback<TData>) => {
-      destState.init = fn;
+      destState.setInit(fn);
       return machine;
     },
     tick: (fn: Callback<TData>) => {
-      destState.tick = fn;
+      destState.setTick(fn);
       return machine;
     },
     exit: (fn: Callback<TData>) => {
-      destState.exit = fn;
+      destState.setExit(fn);
       return machine;
     },
     forAtLeast: countOrFn => {
