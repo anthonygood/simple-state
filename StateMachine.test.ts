@@ -108,6 +108,19 @@ describe('StateMachine', () => {
     });
   });
 
+  describe('previousState()', () => {
+    it('exposes the previous state the machine was in (NOT the previous tick)', () => {
+      const machine = StateMachine<any, 'idle' | 'walk'>('idle')
+        .transitionTo('walk').when(data => data.key === '<walk>');
+
+      expect(machine.previousState()).toBe(null);
+      machine.process({})
+      expect(machine.previousState()).toBe(null);
+      machine.process({ key: '<walk>' });
+      expect(machine.previousState()).toBe('idle');
+    });
+  });
+
   describe('tick state', () => {
     it('calls tick function for each process() call where state does not change', () => {
       const tick1 = jest.fn();
