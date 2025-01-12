@@ -1,6 +1,6 @@
-type Metadata<TData> = {
-  from: string | null,
-  to: string,
+type Metadata<TData, StateName extends string = string> = {
+  from: StateName | null,
+  to: StateName,
   tickCount: number,
   delta?: number,
   duration: number | null,
@@ -14,69 +14,70 @@ type Metadata<TData> = {
     }
   ) => boolean };
 
-type InitData = { from: string | null; recordDuration: boolean };
-type Callback<TData> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata<TData>) => void);
-type InitCallback<TData> = (data: TData, metadata: InitData) => void;
+type InitData<StateName extends string = string> = { from: StateName | null; recordDuration: boolean };
+type Callback<TData, StateName extends string = string> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata<TData, StateName>) => void);
+type InitCallback<TData, StateName extends string = string> = (data: TData, metadata: InitData<StateName>) => void;
 type TickCallback<TData> = (data: TData, metadata: { delta?: number }) => void;
 
-export type State<TData> = {
-  name: string;
-  transitions: PredicateTransition<TData>[];
-  init: InitCallback<TData>;
-  setInit: (fn: Callback<TData>) => void;
+export type State<TData, StateName extends string = string> = {
+  name: StateName;
+  transitions: PredicateTransition<TData, StateName>[];
+  init: InitCallback<TData, StateName>;
+  setInit: (fn: Callback<TData, StateName>) => void;
   tick: TickCallback<TData>;
-  setTick: (fn: Callback<TData>) => void;
-  exit: Callback<TData>; // TODO make consistent with above
-  setExit: (fn: Callback<TData>) => void;
+  setTick: (fn: Callback<TData, StateName>) => void;
+  exit: Callback<TData, StateName>; // TODO make consistent with above
+  setExit: (fn: Callback<TData, StateName>) => void;
   minTicks: number | (() => number);
   minDuration: number | (() => number);
   tickCount: number;
   duration: number | null;
-  stateChangeSubscriptions: Callback<TData>[];
-  stateTickSubscriptions: Callback<TData>[];
-  stateEndSubscriptions: Callback<TData>[];
-  subscriptionsViaMatcher: [Partial<Metadata<TData>>, Callback<TData>][];
+  stateChangeSubscriptions: Callback<TData, StateName>[];
+  stateTickSubscriptions: Callback<TData, StateName>[];
+  stateEndSubscriptions: Callback<TData, StateName>[];
+  subscriptionsViaMatcher: [Partial<Metadata<TData, StateName>>, Callback<TData, StateName>][];
 }
 
-type StateDict<TData> = { [Key: string]: State<TData> }
-type Predicate<TData> = { (data: TData, metadata: { tickCount: number, deltaAlias?: string, duration?: number }): boolean }
+type StateDict<TData, StateName extends string = string> = { [Key: string]: State<TData, StateName> }
+type Predicate<TData> = { (data: TData, metadata: { tickCount: number, duration?: number }): boolean }
 
-type PredicateTransition<TData> = {
+type PredicateTransition<TData, StateName extends string = string> = {
   predicate: Predicate<TData>,
-  state: string, // could be State rather than string?
+  state: StateName, // could be State rather than string?
 };
 
-export type TStateMachine<TData> = {
+export type TStateMachine<TData, StateName extends string = string> = {
   // Builder functions for declaring state graph
-  transitionTo: (stateName: string) => TStateMachine<TData>;
-  when: (predicate: Predicate<TData>) => TStateMachine<TData>;
-  or: (predicate: Predicate<TData>) => TStateMachine<TData>;
-  andThen: (init: Callback<TData>) => TStateMachine<TData>;
-  tick: (tick: Callback<TData>) => TStateMachine<TData>;
-  exit: (exit: Callback<TData>) => TStateMachine<TData>;
-  forAtLeast: (countOrFn: number | (() => number), ticksOrDuration?: 'ticks' | 'duration') => TStateMachine<TData>;
-  state: (stateName: string) => TStateMachine<TData>;
+  transitionTo: (stateName: StateName) => TStateMachine<TData, StateName>;
+  when: (predicate: Predicate<TData>) => TStateMachine<TData, StateName>;
+  or: (predicate: Predicate<TData>) => TStateMachine<TData, StateName>;
+  andThen: (init: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  tick: (tick: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  exit: (exit: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  forAtLeast: (countOrFn: number | (() => number), ticksOrDuration?: 'ticks' | 'duration') => TStateMachine<TData, StateName>;
+  state: (stateName: StateName) => TStateMachine<TData, StateName>;
 
   // Event subscription
-  on: (stateName: string | Partial<Metadata<TData>>, fn: Callback<TData>, modifier?: 'begin' | 'every' | 'end') => TStateMachine<TData>;
-  once: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
-  off: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
-  onEvery: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
-  onEnd: (stateName: string, fn: Callback<TData>) => TStateMachine<TData>;
+  on:      (stateName: StateName | Partial<Metadata<TData, StateName>>, fn: Callback<TData, StateName>, modifier?: 'begin' | 'every' | 'end') => TStateMachine<TData, StateName>;
+  once:    (stateName: StateName, fn: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  off:     (stateName: StateName, fn: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  onEvery: (stateName: StateName, fn: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
+  onEnd:   (stateName: StateName, fn: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
 
   // Top-level controls
-  currentState: () => string;
-  process: (data: TData) => TStateMachine<TData>;
-  init: (data: TData) => TStateMachine<TData>;
-  timers: (deltaAlias?: string) => TStateMachine<TData>;
+  currentState: () => StateName;
+  previousState: () => StateName | null;
+  process: (data: TData) => TStateMachine<TData, StateName>;
+  init: (data: TData) => TStateMachine<TData, StateName>;
+  timers: (deltaAlias?: string) => TStateMachine<TData, StateName>;
 
-  states: StateDict<TData>;
+  states: StateDict<TData, StateName>;
 };
 
 const toNumber = (val: number | (() => number)) => typeof val === 'number' ? val : val();
 
-const callMatchingSubscriptions = <T>(data: T, metadata: Metadata<T>) =>
-  ([matcher, callback]: [Metadata<T>, Callback<T>]): void => {
+const callMatchingSubscriptions = <T, S extends string>(data: T, metadata: Metadata<T, S>) =>
+  ([matcher, callback]: [Metadata<T, S>, Callback<T, S>]): void => {
     if (
       (!matcher.from || matcher.from === metadata.from) &&
       (!matcher.to || matcher.to === metadata.to)
@@ -85,27 +86,27 @@ const callMatchingSubscriptions = <T>(data: T, metadata: Metadata<T>) =>
     }
   };
 
-const filterByMatcher = <T>(metadata: Partial<Metadata<T>>) => {
-  return ([matcher]: [Metadata<T>, Callback<T>]) => {
+const filterByMatcher = <T, S extends string>(metadata: Partial<Metadata<T>>) => {
+  return ([matcher]: [Metadata<T, S>, Callback<T, S>]) => {
     return (!matcher.from || matcher.from === metadata.from) &&
     (!matcher.to || matcher.to === metadata.to)
   }
 };
 
-const State = <TData>(
-  name: string,
+const State = <TData, StateName extends string = string>(
+  name: StateName,
   getMinTicks: number | (() => number) = 0,
   getMinDuration: number | (() => number) = 0,
-): State<TData> => {
+): State<TData, StateName> => {
   // event subscriptions
-  const stateChangeSubscriptions: Callback<TData>[] = [],
-        stateTickSubscriptions: Callback<TData>[] = [],
-        stateEndSubscriptions: Callback<TData>[] = [];
+  const stateChangeSubscriptions: Callback<TData, StateName>[] = [],
+        stateTickSubscriptions: Callback<TData, StateName>[] = [],
+        stateEndSubscriptions: Callback<TData, StateName>[] = [];
 
   // These tuples represent subscriptions to a state via a transition matcher:
   // [matcher, callback] where the matcher will be matched against the metadata of each transition
   // to determine whether the callback should be called.
-  let subscriptionsViaMatcher: [Metadata<TData>, Callback<TData>][] = [],
+  let subscriptionsViaMatcher: [Metadata<TData, StateName>, Callback<TData, StateName>][] = [],
       minTicks = 0,
       minDuration = 0,
       tickCount = 0,
@@ -115,7 +116,7 @@ const State = <TData>(
   // TODO: treat all subscriptions as equal,
   // here calling init(fn) makes fn a special case kind of subscription
   // possibly useful for order/priority of execution, but probably unnecessary complexity
-  const initialiser = (fn: Callback<TData> = () => {}) => (data: TData, initData: { from: string | null; recordDuration: boolean }) => {
+  const initialiser = (fn: Callback<TData, StateName> = () => {}): InitCallback<TData, StateName> => (data: TData, initData: InitData<StateName>) => {
     if (initData.recordDuration) duration = 0;
 
     timesEnteredCount++;
@@ -123,7 +124,7 @@ const State = <TData>(
     minDuration = toNumber(getMinDuration);
     tickCount = 0;
 
-    const metadata: Metadata<TData> = {
+    const metadata: Metadata<TData, StateName> = {
       from: initData.from,
       to: name,
       tickCount,
@@ -133,7 +134,7 @@ const State = <TData>(
     stateChangeSubscriptions.forEach(subscription => subscription(data, metadata));
     stateTickSubscriptions.forEach(subscription => subscription(data, metadata));
 
-    const matchedSubscriptions = subscriptionsViaMatcher.filter(filterByMatcher(metadata));
+    const matchedSubscriptions = subscriptionsViaMatcher.filter(filterByMatcher<TData, StateName>(metadata));
     matchedSubscriptions.forEach(([, callback]) => callback(data, metadata));
 
     // remove subscriptions that should be unsubscribed
@@ -141,13 +142,13 @@ const State = <TData>(
     subscriptionsViaMatcher = subscriptionsViaMatcher.filter(sub => !shouldUnsubscribe.includes(sub));
   };
 
-  const ticker = (fn: Callback<TData> = () => {}) => (data: TData, tickMetadata: { delta?: number }) => {
+  const ticker = (fn: Callback<TData, StateName> = () => {}) => (data: TData, tickMetadata: { delta?: number }) => {
     const { delta } = tickMetadata;
     if (delta && typeof duration === 'number') duration += delta;
 
     tickCount++;
 
-    const metadata: Metadata<TData> = {
+    const metadata: Metadata<TData, StateName> = {
       from: name,
       to: name,
       tickCount,
@@ -210,33 +211,34 @@ const State = <TData>(
     setExit(fn) {
       stateEndSubscriptions.push(fn);
     },
-    exit(data: TData, metadata: Metadata<TData>) {
+    exit(data: TData, metadata: Metadata<TData, StateName>) {
       stateEndSubscriptions.forEach(subscription => subscription(data, metadata));
     },
   }
 };
 
-export const preventTransitionToSameState = (a: string, b: string) => {
+export const preventTransitionToSameState = <StateName extends string>(a: StateName, b: StateName) => {
   if (a === b) {
     throw new Error(`Cannot transition to same state: '${a}'`);
   }
 };
 
-export const StateMachine = <TData>(initialState: string): TStateMachine<TData> => {
-  const states: StateDict<TData> = {
+export const StateMachine = <TData, StateName extends string = string>(initialState: StateName): TStateMachine<TData, StateName> => {
+  const states: StateDict<TData, StateName> = {
     [initialState]: State(initialState),
   };
 
   // subscriptions
-  const onTicks: Callback<TData>[] = [];
+  const onTicks: Callback<TData, StateName>[] = [];
 
   // states used by the monad when building state graph
   let homeState = states[initialState],
       destState = homeState,
       currentStateName = initialState,
+      prevStateName: StateName | null = null,
       deltaAlias: string | undefined;
 
-  const machine: TStateMachine<TData> = {
+  const machine: TStateMachine<TData, StateName> = {
     transitionTo: stateName => {
       preventTransitionToSameState(stateName, homeState.name);
       destState = states[stateName] = states[stateName] || State(stateName);
@@ -252,15 +254,15 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       homeState.transitions.push({ predicate, state: destState.name });
       return machine;
     },
-    andThen: (fn: Callback<TData>) => {
+    andThen: (fn: Callback<TData, StateName>) => {
       destState.setInit(fn);
       return machine;
     },
-    tick: (fn: Callback<TData>) => {
+    tick: (fn: Callback<TData, StateName>) => {
       destState.setTick(fn);
       return machine;
     },
-    exit: (fn: Callback<TData>) => {
+    exit: (fn: Callback<TData, StateName>) => {
       destState.setExit(fn);
       return machine;
     },
@@ -321,6 +323,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
 
         const prevState = currentState;
         const nextState = states[transition.state];
+        prevStateName = currentStateName
         currentStateName = nextState.name;
 
         nextState.init && nextState.init(data, {
@@ -339,7 +342,8 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
       return machine;
     },
     currentState: () => currentStateName,
-    on: (stateNameOrMatcher, fn, modifier: 'begin' | 'every' | 'end' = 'begin') => {
+    previousState: () => prevStateName,
+    on: (stateNameOrMatcher: StateName | Partial<Metadata<TData, StateName>>, fn: Callback<TData, StateName>, modifier: 'begin' | 'every' | 'end' = 'begin'): TStateMachine<TData, StateName> => {
       if (stateNameOrMatcher === 'tick') {
         onTicks.push(fn);
         return machine;
@@ -406,7 +410,7 @@ export const StateMachine = <TData>(initialState: string): TStateMachine<TData> 
     onEvery: (stateName, fn) => {
       return machine.on(stateName, fn, 'every');
     },
-    onEnd: (stateName, fn) => {
+    onEnd: (stateName: StateName, fn: Callback<TData, StateName>): TStateMachine<TData, StateName> => {
       return machine.on(stateName, fn, 'end');
     },
     timers(alias = 'dt') {
