@@ -706,4 +706,24 @@ describe('StateMachine', () => {
     machine.process({ walk: true, dt: 0.75 });
     expect(duration).toBe(1.15);
   });
+
+  it('passes accumulated duration to callbacks applied via transition matcher', () => {
+    const machine = StateMachine<any>('idle')
+      .transitionTo('walk').when(data => data.walk)
+      .state('walk').transitionTo('idle').when((data, { duration = 0 }) => !data.walk && duration > 10)
+      .timers()
+      .init({});
+
+    const callback = jest.fn();
+    machine.on({ from: 'idle', to: 'walk' }, callback);
+
+    machine.process({ walk: false, dt: 0.25 });
+    machine.process({ walk: false, dt: 0.35 });
+    machine.process({ walk: true,  dt: 0.5 });
+
+    expect(callback).toHaveBeenCalledWith(
+      { walk: true,  dt: 0.5 },
+      { from: 'idle', to: 'walk', duration: 1.1, tickCount: 3 },
+    );
+  });
 });
