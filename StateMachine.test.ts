@@ -723,7 +723,7 @@ describe('StateMachine', () => {
 
     expect(callback).toHaveBeenCalledWith(
       { walk: true,  dt: 0.5 },
-      { from: 'idle', to: 'walk', duration: 1.1, tickCount: 3 },
+      { from: 'idle', to: 'walk', duration: 1.1, tickCount: 2 },
     );
   });
 });

@@ -14,7 +14,7 @@ type Metadata<TData, StateName extends string = string> = {
     }
   ) => boolean };
 
-type InitData<StateName extends string = string> = { from: StateName | null; recordDuration: boolean };
+type InitData<StateName extends string = string> = { from: StateName | null; recordDuration: boolean; duration?: number; tickCount?: number };
 type Callback<TData, StateName extends string = string> = (() => void) | ((data: TData) => void) | ((data: TData, metadata: Metadata<TData, StateName>) => void);
 type InitCallback<TData, StateName extends string = string> = (data: TData, metadata: InitData<StateName>) => void;
 type TickCallback<TData> = (data: TData, metadata: { delta?: number }) => void;
@@ -136,7 +136,17 @@ const State = <TData, StateName extends string = string>(
     stateTickSubscriptions.forEach(subscription => subscription(data, metadata));
 
     const matchedSubscriptions = subscriptionsViaMatcher.filter(filterByMatcher<TData, StateName>(metadata));
-    matchedSubscriptions.forEach(([, callback]) => callback(data, metadata));
+    if (matchedSubscriptions.length) {
+      // Whereas 'on' and 'onEnd' deal with the start or end of a state, a transition matcher is concerned with the transition itself.
+      // Therefore the metadata includes the old state's duration (and tickCount), since they can be assumed to be zero for the new state.
+      const matcherMetadata = {
+        from: initData.from,
+        to: name,
+        tickCount: initData.tickCount ?? tickCount,
+        duration: initData.duration ?? duration,
+      };
+      matchedSubscriptions.forEach(([, callback]) => callback(data, matcherMetadata));
+    }
 
     // remove subscriptions that should be unsubscribed
     const shouldUnsubscribe = matchedSubscriptions.filter(([matcher]) => matcher.shouldUnsubscribe?.({ data, timesEnteredCount, tickCount }));
@@ -299,11 +309,9 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
       const currentState = states[currentStateName];
       const { tickCount, minTicks, minDuration } = currentState;
 
-      if (minDuration && !deltaAlias) {
-        machine.timers();
-      }
+      if (minDuration && !deltaAlias) machine.timers();
 
-      const { transitions } = states[currentStateName];
+      const { transitions } = currentState;
 
       const delta = deltaAlias ? data[deltaAlias] : null;
       // TODO: move logic into state object
@@ -330,6 +338,8 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
         nextState.init && nextState.init(data, {
           from: prevState.name,
           recordDuration: !!deltaAlias,
+          duration,
+          tickCount: prevState.tickCount,
         });
       } else {
         currentState.tick(data, { delta });
