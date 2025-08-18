@@ -70,6 +70,7 @@ export type TStateMachine<TData, StateName extends string = string> = {
   process: (data: TData) => TStateMachine<TData, StateName>;
   init: (data: TData) => TStateMachine<TData, StateName>;
   timers: (deltaAlias?: string) => TStateMachine<TData, StateName>;
+  is: (...stateNames: StateName[]) => boolean;
 
   states: StateDict<TData, StateName>;
 };
@@ -343,6 +344,7 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
     },
     currentState: () => currentStateName,
     previousState: () => prevStateName,
+    is: (...stateNames: StateName[]) => stateNames.includes(currentStateName),
     on: (stateNameOrMatcher: StateName | Partial<Metadata<TData, StateName>>, fn: Callback<TData, StateName>, modifier: 'begin' | 'every' | 'end' = 'begin'): TStateMachine<TData, StateName> => {
       if (stateNameOrMatcher === 'tick') {
         onTicks.push(fn);

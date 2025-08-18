@@ -636,6 +636,27 @@ describe('StateMachine', () => {
     });
   });
 
+  describe('is()', () => {
+    it('returns true if current state matches the given state', () => {
+      const machine = StateMachine<any>('idle').transitionTo('walk').when(data => data.walk);
+      expect(machine.is('idle')).toBe(true);
+      expect(machine.is('walk')).toBe(false);
+
+      machine.process({ walk: true });
+      expect(machine.is('idle')).toBe(false);
+      expect(machine.is('walk')).toBe(true);
+    });
+
+    it('returns true if current state is one of the given states', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .transitionTo('fly').when(data => data.fly);
+
+      expect(machine.is('walk', 'idle')).toBe(true);
+      expect(machine.is('walk', 'fly')).toBe(false);
+    });
+  });
+
   describe('timers()', () => {
     const getMachine = () =>
       StateMachine<any>('idle')
