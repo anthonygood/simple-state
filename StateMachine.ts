@@ -127,8 +127,9 @@ const State = <TData, StateName extends string = string>(
   // These tuples represent subscriptions to a state via a transition matcher:
   // [matcher, callback] where the matcher will be matched against the metadata of each transition
   // to determine whether the callback should be called.
-  let subscriptionsViaMatcher: [Metadata<TData, StateName>, Callback<TData, StateName>][] = [],
-      minTicks = 0,
+  // Mutated in place, never reassigned: machine.on() adds to this same array via the state object.
+  const subscriptionsViaMatcher: [Metadata<TData, StateName>, Callback<TData, StateName>][] = [];
+  let minTicks = 0,
       minDuration = 0,
       tickCount = 0,
       timesEnteredCount = 0,
@@ -168,9 +169,11 @@ const State = <TData, StateName extends string = string>(
       matchedSubscriptions.forEach(([, callback]) => callback(data, matcherMetadata));
     }
 
-    // remove subscriptions that should be unsubscribed
-    const shouldUnsubscribe = matchedSubscriptions.filter(([matcher]) => matcher.shouldUnsubscribe?.({ data, timesEnteredCount, tickCount }));
-    subscriptionsViaMatcher = subscriptionsViaMatcher.filter(sub => !shouldUnsubscribe.includes(sub));
+    // Remove subscriptions that should be unsubscribed, in place: reassigning the array would
+    // orphan the state object's reference, so later machine.on() calls would add to a dead list.
+    matchedSubscriptions
+      .filter(([matcher]) => matcher.shouldUnsubscribe?.({ data, timesEnteredCount, tickCount }))
+      .forEach(sub => subscriptionsViaMatcher.splice(subscriptionsViaMatcher.indexOf(sub), 1));
   };
 
   const ticker = (fn: Callback<TData, StateName> = () => {}) => (data: TData, tickMetadata: { delta?: number }) => {

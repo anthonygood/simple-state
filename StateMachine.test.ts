@@ -936,4 +936,62 @@ describe('StateMachine', () => {
       expect(onDead).toHaveBeenCalledWith({ walk: true, kill: true }, expect.objectContaining({ from: 'walk', to: 'dead' }));
     });
   });
+
+  describe('transition subscriptions added after their target state was entered', () => {
+    it('still fire', () => {
+      const before = jest.fn();
+      const after = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(data => !data.walk)
+        .on({ from: 'walk', to: 'idle' }, before)
+        .init({});
+      // 'idle' has now been entered once.
+      machine.on({ from: 'walk', to: 'idle' }, after);
+
+      machine.process({ walk: true });
+      machine.process({ walk: false });
+      expect(before).toHaveBeenCalledTimes(1);
+      expect(after).toHaveBeenCalledTimes(1);
+    });
+
+    it('including once(), which still unsubscribes after firing', () => {
+      const once = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(data => !data.walk)
+        .init({});
+      machine.process({ walk: true });
+      machine.process({ walk: false });
+      // Both states have been entered; subscribe once to the next entry of each.
+      machine.once('walk', once);
+      machine.once('idle', once);
+
+      machine.process({ walk: true });
+      machine.process({ walk: false });
+      machine.process({ walk: true });
+      machine.process({ walk: false });
+      expect(once).toHaveBeenCalledTimes(2);
+    });
+
+    it('survive other subscriptions being removed by once()', () => {
+      const once = jest.fn();
+      const always = jest.fn();
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').transitionTo('idle').when(data => !data.walk)
+        .init({});
+      machine.once('walk', once);
+      machine.on({ to: 'walk' }, always);
+
+      for (let i = 0; i < 3; i++) {
+        machine.process({ walk: true });
+        machine.process({ walk: false });
+        // Added between entries, after once() has already unsubscribed.
+        if (i === 0) machine.on({ to: 'walk' }, always);
+      }
+      expect(once).toHaveBeenCalledTimes(1);
+      expect(always).toHaveBeenCalledTimes(3 + 2);
+    });
+  });
 });
