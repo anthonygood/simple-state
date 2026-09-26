@@ -726,4 +726,214 @@ describe('StateMachine', () => {
       { from: 'idle', to: 'walk', duration: 1.1, tickCount: 2 },
     );
   });
+
+  describe('init()', () => {
+    const walker = () => StateMachine<any>('idle')
+      .timers('dt')
+      .transitionTo('walk').when(data => data.walk)
+      .state('walk').transitionTo('idle').when(data => !data.walk);
+
+    it('on a new machine, just enters the initial state', () => {
+      const onIdle = jest.fn();
+      const machine = walker().on('idle', onIdle).init({ dt: 0 });
+
+      expect(machine.currentState()).toBe('idle');
+      expect(machine.previousState()).toBe(null);
+      expect(onIdle).toHaveBeenCalledTimes(1);
+      expect(onIdle).toHaveBeenCalledWith({ dt: 0 }, { from: null, to: 'idle', tickCount: 0, duration: 0 });
+    });
+
+    it('called again, returns to the initial state from wherever the machine is', () => {
+      const machine = walker().init({ dt: 0 });
+      machine.process({ walk: true, dt: 1 });
+      machine.process({ walk: true, dt: 1 });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.init({ dt: 0 });
+      expect(machine.currentState()).toBe('idle');
+      expect(machine.previousState()).toBe(null);
+      expect(machine.states.idle.tickCount).toBe(0);
+      expect(machine.states.idle.duration).toBe(0);
+
+      // Carries on from the initial state, with fresh timers.
+      machine.process({ walk: false, dt: 1 });
+      expect(machine.currentState()).toBe('idle');
+      expect(machine.states.idle.duration).toBe(1);
+      machine.process({ walk: true, dt: 1 });
+      expect(machine.currentState()).toBe('walk');
+      expect(machine.previousState()).toBe('idle');
+    });
+
+    it('ends the state it leaves, then enters the initial state with from: null', () => {
+      const calls: string[] = [];
+      const machine = walker()
+        .onEnd('walk', (_, meta) => calls.push(`end walk -> ${meta.to}`))
+        .on('idle', (_, meta) => calls.push(`enter idle from ${meta.from}`))
+        .onEvery('idle', () => calls.push('tick idle'))
+        .init({ dt: 0 });
+      machine.process({ walk: true, dt: 1 });
+      calls.length = 0;
+
+      machine.init({ dt: 0 });
+      expect(calls).toEqual(['end walk -> idle', 'enter idle from null', 'tick idle']);
+    });
+
+    it('restarts the initial state when called from it', () => {
+      const onIdle = jest.fn();
+      const machine = walker().on('idle', onIdle).init({ dt: 0 });
+      machine.process({ dt: 2 });
+      machine.process({ dt: 2 });
+      expect(machine.states.idle.duration).toBe(4);
+
+      machine.init({ dt: 0 });
+      expect(onIdle).toHaveBeenCalledTimes(2);
+      expect(machine.states.idle.duration).toBe(0);
+      expect(machine.states.idle.tickCount).toBe(0);
+    });
+
+    it('never fires transition subscriptions that name a from', () => {
+      const walkToIdle = jest.fn();
+      const anyToIdle = jest.fn();
+      const machine = walker()
+        .on({ from: 'walk', to: 'idle' }, walkToIdle)
+        .on({ to: 'idle' }, anyToIdle)
+        .init({ dt: 0 });
+      machine.process({ walk: true, dt: 1 });
+      machine.init({ dt: 0 });
+
+      expect(walkToIdle).not.toHaveBeenCalled();
+      // A matcher without a from matches entry to the initial state, as on a first init.
+      expect(anyToIdle).toHaveBeenCalledTimes(2);
+
+      machine.process({ walk: true, dt: 1 });
+      machine.process({ walk: false, dt: 1 });
+      expect(walkToIdle).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps subscriptions across re-inits', () => {
+      const onWalk = jest.fn();
+      const machine = walker().onEvery('walk', onWalk).init({ dt: 0 });
+      machine.process({ walk: true, dt: 1 });
+      machine.init({ dt: 0 });
+      machine.process({ walk: true, dt: 1 });
+      machine.process({ walk: true, dt: 1 });
+
+      expect(onWalk).toHaveBeenCalledTimes(3);
+    });
+
+    it('is immediate, regardless of the current state\'s forAtLeast', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').forAtLeast(100).transitionTo('idle').when(data => !data.walk)
+        .init({});
+      machine.process({ walk: true });
+      machine.process({ walk: false });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.init({});
+      expect(machine.currentState()).toBe('idle');
+    });
+
+    it('also ends the current state of a machine that was only ever processed', () => {
+      const onEndWalk = jest.fn();
+      const machine = walker().onEnd('walk', onEndWalk);
+      machine.process({ walk: true, dt: 1 });
+      expect(machine.currentState()).toBe('walk');
+
+      machine.init({ dt: 0 });
+      expect(onEndWalk).toHaveBeenCalledTimes(1);
+      expect(machine.currentState()).toBe('idle');
+    });
+  });
+
+  describe('fromAny()', () => {
+    const creature = () => StateMachine<any>('idle')
+      .transitionTo('walk').when(data => data.walk)
+      .state('walk').transitionTo('idle').when(data => !data.walk)
+      .fromAny().transitionTo('dead').when(data => data.kill)
+      .state('dead').transitionTo('idle').when(data => data.respawn);
+
+    it('transitions from every state when its predicate holds', () => {
+      for (const walk of [false, true]) {
+        const machine = creature().init({});
+        machine.process({ walk });
+        expect(machine.currentState()).toBe(walk ? 'walk' : 'idle');
+
+        machine.process({ walk, kill: true });
+        expect(machine.currentState()).toBe('dead');
+        expect(machine.previousState()).toBe(walk ? 'walk' : 'idle');
+      }
+    });
+
+    it('never transitions its target to itself, and needs no same-state guard', () => {
+      const onDead = jest.fn();
+      const machine = creature().on('dead', onDead).init({});
+      machine.process({ kill: true });
+      machine.process({ kill: true });
+      machine.process({ kill: true });
+
+      expect(machine.currentState()).toBe('dead');
+      expect(onDead).toHaveBeenCalledTimes(1);
+    });
+
+    it('lasts until the next state(), which declares that state\'s own transitions as usual', () => {
+      const machine = creature().init({});
+      machine.process({ kill: true });
+      machine.process({ respawn: true });
+      expect(machine.currentState()).toBe('idle');
+
+      // respawn was declared for 'dead' only, not from any state.
+      machine.process({ walk: true });
+      machine.process({ walk: true, respawn: true });
+      expect(machine.currentState()).toBe('walk');
+    });
+
+    it('can list states it does not apply to', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .fromAny('idle').transitionTo('dead').when(data => data.kill)
+        .init({});
+      machine.process({ kill: true });
+      expect(machine.currentState()).toBe('idle');
+
+      machine.process({ walk: true });
+      machine.process({ kill: true });
+      expect(machine.currentState()).toBe('dead');
+    });
+
+    it('interrupts: checked before a state\'s own transitions, and ignores its forAtLeast', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .state('walk').forAtLeast(100).transitionTo('run').when(data => data.run)
+        .fromAny().transitionTo('dead').when(data => data.kill)
+        .init({});
+      machine.process({ walk: true });
+      machine.process({ run: true, kill: true });
+
+      expect(machine.currentState()).toBe('dead');
+    });
+
+    it('supports several transitions, checked in the order declared', () => {
+      const machine = StateMachine<any>('idle')
+        .transitionTo('walk').when(data => data.walk)
+        .fromAny()
+        .transitionTo('dead').when(data => data.kill)
+        .transitionTo('stunned').when(data => data.hit).or(data => data.kill)
+        .init({});
+      machine.process({ hit: true });
+      expect(machine.currentState()).toBe('stunned');
+
+      machine.process({ kill: true });
+      expect(machine.currentState()).toBe('dead');
+    });
+
+    it('runs the target\'s entry callbacks with the state it came from', () => {
+      const onDead = jest.fn();
+      const machine = creature().on('dead', onDead).init({});
+      machine.process({ walk: true });
+      machine.process({ walk: true, kill: true });
+
+      expect(onDead).toHaveBeenCalledWith({ walk: true, kill: true }, expect.objectContaining({ from: 'walk', to: 'dead' }));
+    });
+  });
 });

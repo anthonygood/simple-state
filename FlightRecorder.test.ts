@@ -124,4 +124,15 @@ describe('FlightRecorder', () => {
       FlightRecorder(getStateMachine(), getStateMachine())
     }).toThrow(`Naming collision: state 'idle' exists in multiple state machines.`);
   });
+
+  it('counts a re-init as a new entry to the initial state', () => {
+    const machine = getStateMachine();
+    const records = FlightRecorder(machine);
+    machine.init({ delta: 1 });
+    machine.process({ walk: true, delta: 1 });
+    machine.init({ delta: 1 });
+
+    expect(records.idle.count).toBe(2);
+    expect(records.walking.count).toBe(1);
+  });
 });

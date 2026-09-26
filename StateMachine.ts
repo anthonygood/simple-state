@@ -46,6 +46,11 @@ type PredicateTransition<TData, StateName extends string = string> = {
   state: StateName, // could be State rather than string?
 };
 
+/** A transition declared with fromAny(): checked in every state except its target and `except`. */
+type AnyStateTransition<TData, StateName extends string = string> = PredicateTransition<TData, StateName> & {
+  except: StateName[],
+};
+
 export type TStateMachine<TData, StateName extends string = string> = {
   // Builder functions for declaring state graph
   transitionTo: (stateName: StateName) => TStateMachine<TData, StateName>;
@@ -56,6 +61,13 @@ export type TStateMachine<TData, StateName extends string = string> = {
   exit: (exit: Callback<TData, StateName>) => TStateMachine<TData, StateName>;
   forAtLeast: (countOrFn: number | (() => number), ticksOrDuration?: 'ticks' | 'duration') => TStateMachine<TData, StateName>;
   state: (stateName: StateName) => TStateMachine<TData, StateName>;
+  /**
+   * Declares transitions that apply in every state, e.g. `.fromAny().transitionTo('die').when(isKilled)`,
+   * until the next `.state()`. They never apply in their own target state, nor in any state
+   * listed in `except`. They are checked before a state's own transitions, and ignore its
+   * forAtLeast minimum: they're interrupts.
+   */
+  fromAny: (...except: StateName[]) => TStateMachine<TData, StateName>;
 
   // Event subscription
   on:      (stateName: StateName | Partial<Metadata<TData, StateName>>, fn: Callback<TData, StateName>, modifier?: 'begin' | 'every' | 'end') => TStateMachine<TData, StateName>;
@@ -68,6 +80,14 @@ export type TStateMachine<TData, StateName extends string = string> = {
   currentState: () => StateName;
   previousState: () => StateName | null;
   process: (data: TData) => TStateMachine<TData, StateName>;
+  /**
+   * Enters the initial state as if the machine were new, keeping its subscriptions. On a new
+   * machine, this just runs the initial state's entry callbacks. Called again (e.g. to reuse a
+   * pooled object), it first ends the current state (its onEnd subscribers run), then moves to
+   * the initial state, clears previousState(), resets the initial state's tick count and
+   * duration, and runs its entry callbacks with `from: null`. It is immediate: forAtLeast
+   * minimums don't apply. Transition subscriptions naming a `from` never fire on init.
+   */
   init: (data: TData) => TStateMachine<TData, StateName>;
   timers: (deltaAlias?: string) => TStateMachine<TData, StateName>;
   is: (...stateNames: StateName[]) => boolean;
@@ -242,27 +262,45 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
   // subscriptions
   const onTicks: Callback<TData, StateName>[] = [];
 
+  // Transitions declared with fromAny(), checked in every state before its own.
+  const anyStateTransitions: AnyStateTransition<TData, StateName>[] = [];
+
   // states used by the monad when building state graph
   let homeState = states[initialState],
       destState = homeState,
       currentStateName = initialState,
       prevStateName: StateName | null = null,
-      deltaAlias: string | undefined;
+      deltaAlias: string | undefined,
+      // Set by fromAny(): transitions being declared apply to every state, until the next state().
+      anyStateExcept: StateName[] | null = null,
+      // Whether the machine has entered a state yet, via init() or process().
+      started = false;
+
+  const addTransition = (predicate: Predicate<TData>) => {
+    if (anyStateExcept) {
+      anyStateTransitions.push({ predicate, state: destState.name, except: anyStateExcept });
+      return;
+    }
+    preventTransitionToSameState(homeState.name, destState.name);
+    homeState.transitions.push({ predicate, state: destState.name });
+  };
 
   const machine: TStateMachine<TData, StateName> = {
     transitionTo: stateName => {
-      preventTransitionToSameState(stateName, homeState.name);
+      if (!anyStateExcept) preventTransitionToSameState(stateName, homeState.name);
       destState = states[stateName] = states[stateName] || State(stateName);
       return machine;
     },
     when: predicate => {
-      preventTransitionToSameState(homeState.name, destState.name);
-      homeState.transitions.push({ predicate, state: destState.name });
+      addTransition(predicate);
       return machine;
     },
     or: predicate => {
-      preventTransitionToSameState(homeState.name, destState.name);
-      homeState.transitions.push({ predicate, state: destState.name });
+      addTransition(predicate);
+      return machine;
+    },
+    fromAny: (...except) => {
+      anyStateExcept = except;
       return machine;
     },
     andThen: (fn: Callback<TData, StateName>) => {
@@ -298,14 +336,29 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
         throw new TypeError(`'${stateName}' not found in states: ${Object.keys(states)}`)
       }
       homeState = destState = nominatedState;
+      anyStateExcept = null;
       return machine;
     },
     init: (data: TData) => {
+      if (started) {
+        const currentState = states[currentStateName];
+        currentState.exit(data, {
+          from: currentStateName,
+          to: initialState,
+          tickCount: currentState.tickCount,
+          duration: currentState.duration,
+        });
+      }
+      started = true;
+      prevStateName = null;
+      currentStateName = initialState;
+
       const { init } = states[initialState];
       init(data, { from: null, recordDuration: !!deltaAlias });
       return machine;
     },
     process: data => {
+      started = true;
       const currentState = states[currentStateName];
       const { tickCount, minTicks, minDuration } = currentState;
 
@@ -316,13 +369,16 @@ export const StateMachine = <TData, StateName extends string = string>(initialSt
       const delta = deltaAlias ? data[deltaAlias] : null;
       // TODO: move logic into state object
       const duration = deltaAlias ? currentState.duration + (delta || 0) : null;
-      const transition = transitions.find(
-        transition => transition.predicate(data, {
-          tickCount,
-          duration,
-        }));
+      const metadata = { tickCount, duration };
+      // fromAny() transitions interrupt: checked first, and not held back by forAtLeast.
+      const interrupt = anyStateTransitions.find(transition =>
+        transition.state !== currentStateName &&
+        !transition.except.includes(currentStateName) &&
+        transition.predicate(data, metadata));
+      const transition = interrupt ?? transitions.find(
+        transition => transition.predicate(data, metadata));
 
-      if (transition && tickCount >= toNumber(minTicks) && duration >= toNumber(minDuration)) {
+      if (transition && (interrupt || (tickCount >= toNumber(minTicks) && duration >= toNumber(minDuration)))) {
         currentState.exit(data, {
           from: currentStateName,
           to: transition.state,
